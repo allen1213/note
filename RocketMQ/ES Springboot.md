@@ -1,0 +1,2112 @@
+### 准备工作
+
+pom.xml引入相关依赖
+
+```xml
+<!--lombok-->
+<dependency>
+    <groupId>org.projectlombok</groupId>
+    <artifactId>lombok</artifactId>
+    <optional>true</optional>
+</dependency>
+
+<!--fastjson-->
+<dependency>
+    <groupId>com.alibaba</groupId>
+    <artifactId>fastjson</artifactId>
+    <version>1.2.61</version>
+</dependency>
+
+<!--elasticsearch-->
+<dependency>
+    <groupId>org.elasticsearch.client</groupId>
+    <artifactId>elasticsearch-rest-high-level-client</artifactId>
+    <version>${es.version}</version><!--7.8.1-->
+</dependency>
+<dependency>
+    <groupId>org.elasticsearch</groupId>
+    <artifactId>elasticsearch</artifactId>
+    <version>${es.version}</version>
+</dependency>
+```
+
+
+
+application.yml
+
+```yml
+#elasticsearch
+elasticsearch:
+  schema: http
+  address: 127.0.0.1:9200
+  connectTimeout: 5000
+  socketTimeout: 5000
+  connectionRequestTimeout: 5000
+  maxConnectNum: 100
+  maxConnectPerRoute: 100
+```
+
+
+
+
+
+ElasticSearch 链接配置类
+
+```java
+import org.apache.http.HttpHost;
+import org.elasticsearch.client.RestClient;
+import org.elasticsearch.client.RestClientBuilder;
+import org.elasticsearch.client.RestHighLevelClient;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import java.util.ArrayList;
+import java.util.List;
+ 
+/**
+ * ElasticSearch 配置
+ */
+@Configuration
+public class ElasticSearchConfig {
+ 
+    /** 协议 */
+    @Value("${elasticsearch.schema:http}")
+    private String schema;
+ 
+    /** 集群地址，如果有多个用“,”隔开 */
+    @Value("${elasticsearch.address}")
+    private String address;
+ 
+    /** 连接超时时间 */
+    @Value("${elasticsearch.connectTimeout:5000}")
+    private int connectTimeout;
+ 
+    /** Socket 连接超时时间 */
+    @Value("${elasticsearch.socketTimeout:10000}")
+    private int socketTimeout;
+ 
+    /** 获取连接的超时时间 */
+    @Value("${elasticsearch.connectionRequestTimeout:5000}")
+    private int connectionRequestTimeout;
+ 
+    /** 最大连接数 */
+    @Value("${elasticsearch.maxConnectNum:100}")
+    private int maxConnectNum;
+ 
+    /** 最大路由连接数 */
+    @Value("${elasticsearch.maxConnectPerRoute:100}")
+    private int maxConnectPerRoute;
+ 
+    @Bean
+    public RestHighLevelClient restHighLevelClient() {
+        // 拆分地址
+        List<HttpHost> hostLists = new ArrayList<>();
+        String[] hostList = address.split(",");
+        for (String addr : hostList) {
+            String host = addr.split(":")[0];
+            String port = addr.split(":")[1];
+            hostLists.add(new HttpHost(host, Integer.parseInt(port), schema));
+        }
+        // 转换成 HttpHost 数组
+        HttpHost[] httpHost = hostLists.toArray(new HttpHost[]{});
+        // 构建连接对象
+        RestClientBuilder builder = RestClient.builder(httpHost);
+        // 异步连接延时配置
+        builder.setRequestConfigCallback(requestConfigBuilder -> {
+            requestConfigBuilder.setConnectTimeout(connectTimeout);
+            requestConfigBuilder.setSocketTimeout(socketTimeout);
+            requestConfigBuilder.setConnectionRequestTimeout(connectionRequestTimeout);
+            return requestConfigBuilder;
+        });
+        // 异步连接数配置
+        builder.setHttpClientConfigCallback(httpClientBuilder -> {
+            httpClientBuilder.setMaxConnTotal(maxConnectNum);
+            httpClientBuilder.setMaxConnPerRoute(maxConnectPerRoute);
+            return httpClientBuilder;
+        });
+        return new RestHighLevelClient(builder);
+    }
+ 
+}
+```
+
+
+
+实体类User.java
+
+```JAVA
+@Data
+@ToString
+@Accessors(chain = true)
+public class User {
+
+    private String name;
+
+    private Integer age;
+
+    private Float salary;
+
+    private String address;
+
+    private String remark;
+
+    private Date createTime;
+
+    private Date birthday;
+
+}
+```
+
+
+
+
+
+
+
+
+
+### 创建索引
+
+
+
+创建一个名为 user 的索引和对应的 Mapping，相当于创建数据库表
+
+```json
+POST http://127.0.0.1:9200/user
+{
+  "mappings": {
+    "doc": {
+      "dynamic": true,
+      "properties": {
+        "name": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword"
+            }
+          }
+        },
+        "address": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword"
+            }
+          }
+        },
+        "remark": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword"
+            }
+          }
+        },
+        "age": {
+          "type": "integer"
+        },
+        "salary": {
+          "type": "float"
+        },
+        "birthDate": {
+          "type": "date",
+          "format": "yyyy-MM-dd"
+        },
+        "createTime": {
+          "type": "date"
+        }
+      }
+    }
+  }
+}
+```
+
+
+
+java代码实例
+
+```java
+@Autowired
+private RestHighLevelClient restHighLevelClient;
+
+@Test
+public void createIndex() throws Exception {
+
+    // 创建 Mapping
+    XXContentBuilder mapping = XContentFactory.jsonBuilder()
+                .startObject()
+                    .field("dynamic", true)
+                    .startObject("properties")
+                        .startObject("name")
+                            .field("type","text")
+                            .startObject("fields")
+                                .startObject("keyword")
+                                    .field("type","keyword")
+                                .endObject()
+                            .endObject()
+                        .endObject()
+                        .startObject("address")
+                            .field("type","text")
+                            .startObject("fields")
+                                .startObject("keyword")
+                                    .field("type","keyword")
+                                .endObject()
+                            .endObject()
+                        .endObject()
+                        .startObject("remark")
+                            .field("type","text")
+                            .startObject("fields")
+                                .startObject("keyword")
+                                    .field("type","keyword")
+                                .endObject()
+                            .endObject()
+                        .endObject()
+                        .startObject("age")
+                            .field("type","integer")
+                        .endObject()
+                        .startObject("salary")
+                            .field("type","float")
+                        .endObject()
+                        .startObject("birthDate")
+                            .field("type","date")
+                            .field("format", "yyyy-MM-dd")
+                        .endObject()
+                        .startObject("createTime")
+                            .field("type","date")
+                        .endObject()
+                    .endObject()
+                .endObject();
+
+    // 创建索引配置信息，配置
+    Settings settings = Settings.builder()
+        .put("index.number_of_shards", 3)
+        .put("index.number_of_replicas", 0)
+        .build();
+
+    // 新建创建索引请求对象，然后设置索引类型（ES 7.0 将不存在索引类型）和 mapping 与 index 配置
+    CreateIndexRequest request = new CreateIndexRequest("user", settings);
+    request.mapping("doc", mapping);
+
+    // RestHighLevelClient 执行创建索引
+    CreateIndexResponse createIndexResponse = restHighLevelClient.indices().create(request, RequestOptions.DEFAULT);
+
+    // 判断是否创建成功
+    boolean isCreated = createIndexResponse.isAcknowledged();
+
+    System.out.println(isCreated);
+}
+```
+
+
+
+
+
+
+
+
+
+### 删除索引
+
+`DELETE http://127.0.0.1:9200/user`，相当于删除数据库表
+
+
+
+java代码实例
+
+```java
+@Test
+public void deleteIndex() throws Exception {
+
+    // 新建删除索引请求对象
+    DeleteIndexRequest request = new DeleteIndexRequest("user");
+
+    // 执行删除索引
+    AcknowledgedResponse acknowledgedResponse = restHighLevelClient.indices().delete(request, RequestOptions.DEFAULT);
+
+    // 判断是否删除成功
+    boolean isDeleted = acknowledgedResponse.isAcknowledged();
+
+    System.out.println(isDeleted);
+}
+```
+
+
+
+
+
+
+
+
+
+### 添加文档
+
+在索引 user 中增加一条文档信息，并指定 _id 为 1，`insert into user(...)`
+
+```json
+POST http://127.0.0.1:9200/user/_doc/1
+{
+    "address": "北京市",
+    "age": 29,
+    "birthDate": "1990-01-10",
+    "createTime": 1579530727699,
+    "name": "张三",
+    "remark": "来自北京市的张先生",
+    "salary": 100
+}
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void addDoc() throws IOException {
+
+    // 创建索引请求对象
+    IndexRequest indexRequest = new IndexRequest("user", "doc", "1");
+
+    User user = new User()
+        .setName("allen")
+        .setAge(20)
+        .setSalary(100.00f)
+        .setAddress("上海市")
+        .setRemark("allen handsome")
+        .setCreateTime(new Date())
+        .setBirthday(new Date());
+
+    // 将对象转换为 byte 数组
+    byte[] json = JSON.toJSONBytes(user);
+
+    // 设置文档内容
+    indexRequest.source(json, XContentType.JSON);
+
+    // 执行增加文档
+    IndexResponse response = restHighLevelClient.index(indexRequest, RequestOptions.DEFAULT);
+
+    System.out.println(response.status());
+
+}
+```
+
+
+
+
+
+
+
+
+
+### 查询文档
+
+`select * from user where id = 1`
+
+```json
+GET http://127.0.0.1:9200/user/_doc/1
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void getDoc() throws IOException {
+
+    GetRequest getRequest = new GetRequest("user", "1");
+
+    GetResponse getResponse = restHighLevelClient.get(getRequest, RequestOptions.DEFAULT);
+
+    if (getResponse.isExists()) {
+        User user = JSON.parseObject(getResponse.getSourceAsBytes(), User.class);
+        System.out.println(user);
+    }
+
+}
+```
+
+
+
+
+
+
+
+
+
+### 更新文档
+
+`update user set ... where id = 1`
+
+```json
+PUT http://127.0.0.1:9200/user/_doc/1
+{
+    "address": "北京市海淀区",
+    "age": 29,
+    "birthDate": "1990-01-10",
+    "createTime": 1579530727699,
+    "name": "张三",
+    "remark": "来自北京市的张先生",
+    "salary": 100
+}
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void updateDoc() throws IOException {
+
+    // 创建索引请求对象
+    UpdateRequest updateRequest = new UpdateRequest("user", "1");
+
+    User userInfo = new User();
+    userInfo.setSalary(200.00f);
+    userInfo.setAddress("上海市-浦东区");
+
+    // 将对象转换为 byte 数组
+    byte[] json = JSON.toJSONBytes(userInfo);
+    // 设置更新文档内容
+    updateRequest.doc(json, XContentType.JSON);
+
+    // 执行更新文档
+    UpdateResponse response = restHighLevelClient.update(updateRequest, RequestOptions.DEFAULT);
+
+    System.out.println(response.status());
+}
+```
+
+
+
+
+
+
+
+### 删除文档
+
+`delete from user where id = 1`
+
+```json
+DELETE http://127.0.0.1:9200/user/_doc/1
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void delDoc() throws IOException {
+    // 创建删除请求对象
+    DeleteRequest deleteRequest = new DeleteRequest("user", "1");
+    // 执行删除文档
+    DeleteResponse response = restHighLevelClient.delete(deleteRequest, RequestOptions.DEFAULT);
+    System.out.println(response.status());
+}
+```
+
+
+
+
+
+
+
+### 初始化插入数据
+
+执行查询示例前，先往索引中插入一批数据
+
+#### 单条插入
+
+```json
+POST  http://127.0.0.1:9200/user/_doc
+{
+    "name":"零零",
+    "address":"北京市丰台区",
+    "remark":"低层员工",
+    "age":29,"salary":3000,
+    "birthDate":"1990-11-11",
+    "createTime":"2019-11-11T08:18:00.000Z"
+}
+```
+
+
+
+
+
+#### 批量插入
+
+```json
+POST  http://127.0.0.1:9200/_bulk
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"刘一","address":"北京市丰台区","remark":"低层员工","age":30,"salary":3000,"birthDate":"1989-11-11","createTime":"2019-03-15T08:18:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"陈二","address":"北京市昌平区","remark":"中层员工","age":27,"salary":7900,"birthDate":"1992-01-25","createTime":"2019-11-08T11:15:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"张三","address":"北京市房山区","remark":"中层员工","age":28,"salary":8800,"birthDate":"1991-10-05","createTime":"2019-07-22T13:22:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"李四","address":"北京市大兴区","remark":"高层员工","age":26,"salary":9000,"birthDate":"1993-08-18","createTime":"2019-10-17T15:00:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"王五","address":"北京市密云区","remark":"低层员工","age":31,"salary":4800,"birthDate":"1988-07-20","createTime":"2019-05-29T09:00:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"赵六","address":"北京市通州区","remark":"中层员工","age":32,"salary":6500,"birthDate":"1987-06-02","createTime":"2019-12-10T18:00:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"孙七","address":"北京市朝阳区","remark":"中层员工","age":33,"salary":7000,"birthDate":"1986-04-15","createTime":"2019-06-06T13:00:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"周八","address":"北京市西城区","remark":"低层员工","age":32,"salary":5000,"birthDate":"1987-09-26","createTime":"2019-01-26T14:00:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"吴九","address":"北京市海淀区","remark":"高层员工","age":30,"salary":11000,"birthDate":"1989-11-25","createTime":"2019-09-07T13:34:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"郑十","address":"北京市东城区","remark":"低层员工","age":29,"salary":5000,"birthDate":"1990-12-25","createTime":"2019-03-06T12:08:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"萧十一","address":"北京市平谷区","remark":"低层员工","age":29,"salary":3300,"birthDate":"1990-11-11","createTime":"2019-03-10T08:17:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"曹十二","address":"北京市怀柔区","remark":"中层员工","age":27,"salary":6800,"birthDate":"1992-01-25","createTime":"2019-12-03T11:09:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"吴十三","address":"北京市延庆区","remark":"中层员工","age":25,"salary":7000,"birthDate":"1994-10-05","createTime":"2019-07-27T14:22:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"冯十四","address":"北京市密云区","remark":"低层员工","age":25,"salary":3000,"birthDate":"1994-08-18","createTime":"2019-04-22T15:00:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"蒋十五","address":"北京市通州区","remark":"低层员工","age":31,"salary":2800,"birthDate":"1988-07-20","createTime":"2019-06-13T10:00:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"苗十六","address":"北京市门头沟区","remark":"高层员工","age":32,"salary":11500,"birthDate":"1987-06-02","createTime":"2019-11-11T18:00:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"鲁十七","address":"北京市石景山区","remark":"高员工","age":33,"salary":9500,"birthDate":"1986-04-15","createTime":"2019-06-06T14:00:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"沈十八","address":"北京市朝阳区","remark":"中层员工","age":31,"salary":8300,"birthDate":"1988-09-26","createTime":"2019-09-25T14:00:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"吕十九","address":"北京市西城区","remark":"低层员工","age":31,"salary":4500,"birthDate":"1988-11-25","createTime":"2019-09-22T13:34:00.000Z"}
+
+{"index":{"_index":"mydlq-user","_type":"doc"}}
+{"name":"丁二十","address":"北京市东城区","remark":"低层员工","age":33,"salary":2100,"birthDate":"1986-12-25","createTime":"2019-03-07T12:08:00.000Z"}
+```
+
+
+
+`GET  http://127.0.0.1:9200/user/_search`  查询数据是否已经插入索引
+
+
+
+
+
+
+
+
+
+### Term 精确查询
+
+查询地址为 北京市通州区 的人员信息：`select * from user where address = '北京市通州区' ` ，查询条件不会进行分词，但是查询内容可能会分词，导致查询不到，之前在创建索引时设置 Mapping 中 address 字段存在 keyword 字段是专门用于不分词查询的子字段
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "query": {
+    "term": {
+      "address.keyword": {
+        "value": "北京市通州区"
+      }
+    }
+  }
+}
+
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void termQuery() throws Exception {
+
+    // 构建查询条件，termQuery 支持多种格式查询
+    // 如 boolean、int、double、string 等，这里使用的是 string 的查询
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+
+    searchSourceBuilder.query(QueryBuilders.termQuery("address", "北京市通州区"));
+
+
+    // 创建查询请求对象，将查询对象配置到其中
+    SearchRequest searchRequest = new SearchRequest("user");
+    searchRequest.source(searchSourceBuilder);
+
+    // 执行查询，然后处理响应结果
+    print(searchRequest);
+
+}
+```
+
+
+
+由于`print()` 为通用方法，所以抽出来：
+
+```java
+private void print(SearchRequest searchRequest) throws IOException {
+    // 执行查询，然后处理响应结果
+    SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+
+    if (RestStatus.OK.equals(searchResponse.status()) && searchResponse.getHits().getTotalHits().value > 0) {
+        SearchHits hits = searchResponse.getHits();
+        for (SearchHit hit : hits) {
+            User user = JSON.parseObject(hit.getSourceAsString(), User.class);
+            System.out.println(user);
+        }
+    }
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+### Terms 精确查询
+
+和term查询一样，只是可以放多个值，相当于数据库中的`IN`，查询地址为 北京市丰台区、北京市昌平区 或 北京市大兴区 的人员信息：``select * from user where address in(...)`
+
+```json
+GET http://127.0.0.1:9200/user/_search
+GET mydlq-user/_search
+{
+  "query": {
+    "terms": {
+      "address.keyword": [
+        "北京市丰台区",
+        "北京市昌平区",
+        "北京市大兴区"
+      ]
+    }
+  }
+}
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void termQuery() throws Exception {
+
+    // 构建查询条件，termQuery 支持多种格式查询
+    // 如 boolean、int、double、string 等，这里使用的是 string 的查询
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+
+    searchSourceBuilder.query(QueryBuilders.termsQuery("address.keyword", "北京市丰台区", "北京市昌平区", "北京市大兴区"));
+
+    // 创建查询请求对象，将查询对象配置到其中
+    SearchRequest searchRequest = new SearchRequest("user");
+    searchRequest.source(searchSourceBuilder);
+
+    // 执行查询，然后处理响应结果
+    print(searchRequest);
+
+}
+```
+
+
+
+
+
+
+
+
+
+### Match_all 匹配查询
+
+查询所有数据，并且设置以 salary 字段升序排序，并设置分页：`select * from user order by salary limit 0,10`
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "query": {
+    "match_all": {}
+  },
+  "from": 0,
+  "size": 10,
+  "sort": [
+    {
+      "salary": {
+        "order": "asc"
+      }
+    }
+  ]
+}
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void matchAllQuery() throws Exception {
+    //构建查询条件
+    MatchAllQueryBuilder matchAllQueryBuilder = QueryBuilders.matchAllQuery();
+
+    // 创建查询源构造器
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.query(matchAllQueryBuilder);
+
+    //设置分页,排序
+    searchSourceBuilder.from(0);
+    searchSourceBuilder.size(3);
+    searchSourceBuilder.sort("salary", SortOrder.ASC);
+
+    // 创建查询请求对象，将查询对象配置到其中
+    SearchRequest searchRequest = new SearchRequest("user");
+    searchRequest.source(searchSourceBuilder);
+
+    // 执行查询，然后处理响应结果
+    print(searchRequest);
+
+}
+```
+
+
+
+
+
+
+
+### Match 匹配查询
+
+匹配查询地址为 通州区 的数据：`select * from user where address like '%通州区%'`
+
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "query": {
+    "match": {
+      "address": "通州区"
+    }
+  }
+}
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void matchQuery() throws IOException {
+    // 构建查询条件
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.query(QueryBuilders.matchQuery("address", "*通州区"));
+
+    // 创建查询请求对象，将查询对象配置到其中
+    SearchRequest searchRequest = new SearchRequest("user");
+    searchRequest.source(searchSourceBuilder);
+    print(searchRequest);
+
+}
+```
+
+
+
+
+
+
+
+### Match_phrase 词语匹配查询
+
+词语匹配进行查询，匹配 address 中为 北京市通州区 的员工信息：
+
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "query": {
+    "match_phrase": {
+      "address": "北京市通州区"
+    }
+  }
+}
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void matchPhraseQuery() throws IOException {
+
+    // 构建查询条件
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.query(QueryBuilders.matchPhraseQuery("address", "北京市通州区"));
+    // 创建查询请求对象，将查询对象配置到其中
+    SearchRequest searchRequest = new SearchRequest("user");
+    searchRequest.source(searchSourceBuilder);
+
+    // 执行查询，然后处理响应结果
+    print(searchRequest);
+}
+```
+
+
+
+
+
+
+
+
+
+### Multi_match 内容多字段查询
+
+查询在字段 address、remark 中存在 北京 内容的员工信息：`select * from user where address like '%北京%' or remark like '%北京%' `
+
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "query": {
+    "multi_match": {
+      "query": "北京",
+      "fields": ["address","remark"]
+    }
+  }
+}
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void matchMultiQuery() throws IOException {
+
+    // 构建查询条件
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.query(QueryBuilders.multiMatchQuery("北京市", "address", "remark"));
+    // 创建查询请求对象，将查询对象配置到其中
+    SearchRequest searchRequest = new SearchRequest("user");
+    searchRequest.source(searchSourceBuilder);
+
+    print(searchRequest);
+}
+```
+
+
+
+
+
+
+
+
+
+### Fuzzy模糊查询
+
+模糊查询所有以 三 结尾的姓名：`select * from user where name like '%三'`
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "query": {
+    "fuzzy": {
+      "name": "三"
+    }
+  }
+}
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void fuzzyQuery() throws IOException {
+    // 构建查询条件
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.query(QueryBuilders.fuzzyQuery("name", "三").fuzziness(Fuzziness.AUTO));
+    // 创建查询请求对象，将查询对象配置到其中
+    SearchRequest searchRequest = new SearchRequest("user");
+    searchRequest.source(searchSourceBuilder);
+
+    print(searchRequest);
+}
+```
+
+
+
+
+
+
+
+
+
+### Range 范围查询
+
+查询岁数 ≥ 30 岁的员工数据：
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "query": {
+    "range": {
+      "age": {
+        "gte": 30
+      }
+    }
+  }
+}
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void rangeQuery() throws IOException {
+    // 构建查询条件
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.query(QueryBuilders.rangeQuery("age").gte(30));
+    // 创建查询请求对象，将查询对象配置到其中
+    SearchRequest searchRequest = new SearchRequest("user");
+    searchRequest.source(searchSourceBuilder);
+
+    print(searchRequest);
+
+}
+```
+
+
+
+查询生日距离现在 30 年间的员工数据：
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "query": {
+    "range": {
+      "birthDate": {
+        "gte": "now-30y"
+      }
+    }
+  }
+}
+```
+
+
+
+java代码示例
+
+```java
+/**
+* 查询距离现在 30 年间的员工数据
+* [年(y)、月(M)、星期(w)、天(d)、小时(h)、分钟(m)、秒(s)]
+* 例如：
+* now-1h 查询一小时内范围
+* now-1d 查询一天内时间范围
+* now-1y 查询最近一年内的时间范围
+*/
+@Test
+public void dateRangeQuery() throws IOException {
+    // 构建查询条件
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    // includeLower（是否包含下边界）、includeUpper（是否包含上边界）
+    searchSourceBuilder.query(QueryBuilders.rangeQuery("birthDate")
+                              .gte("now-30y").includeLower(true).includeUpper(true));
+    // 创建查询请求对象，将查询对象配置到其中
+    SearchRequest searchRequest = new SearchRequest("user");
+    searchRequest.source(searchSourceBuilder);
+
+    print(searchRequest);
+}
+```
+
+
+
+
+
+
+
+
+
+### Wildcard通配符查询
+
+查询所有以 “三” 结尾的姓名：
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "query": {
+    "wildcard": {
+      "name.keyword": {
+        "value": "*三"
+      }
+    }
+  }
+}
+```
+
+
+
+java代码示例
+
+```java
+/**
+* 查询所有以 “三” 结尾的姓名
+* <p>
+* *：表示多个字符（0个或多个字符）
+* ?：表示单个字符
+*/
+@Test
+public void wildcardQuery() throws IOException {
+    // 构建查询条件
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.query(QueryBuilders.wildcardQuery("name.keyword", "*三"));
+    // 创建查询请求对象，将查询对象配置到其中
+    SearchRequest searchRequest = new SearchRequest("user");
+    searchRequest.source(searchSourceBuilder);
+
+    print(searchRequest);
+}
+```
+
+
+
+
+
+
+
+
+
+### Bool 布尔查询
+
+查询出生在 1990-1995 年期间，且地址在 北京市昌平区、北京市大兴区、北京市房山区 的员工信息：
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "query": {
+    "bool": {
+      "filter": {
+        "range": {
+          "birthDate": {
+            "format": "yyyy", 
+            "gte": 1990,
+            "lte": 1995
+          }
+        }
+      },
+      "must": [
+        {
+          "terms": {
+            "address.keyword": [
+              "北京市昌平区",
+              "北京市大兴区",
+              "北京市房山区"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void boolQuery() throws IOException {
+    // 创建 Bool 查询构建器
+    BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();
+    // 构建查询条件
+    boolQueryBuilder.must(QueryBuilders.termsQuery("address.keyword", "北京市昌平区", "北京市大兴区", "北京市房山区"))
+        .filter().add(QueryBuilders.rangeQuery("birthDate").format("yyyy").gte("1990").lte("1995"));
+    // 构建查询源构建器
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.query(boolQueryBuilder);
+    // 创建查询请求对象，将查询对象配置到其中
+    SearchRequest searchRequest = new SearchRequest("user");
+    searchRequest.source(searchSourceBuilder);
+
+    print(searchRequest);
+}
+```
+
+
+
+
+
+
+
+
+
+### Metric 聚合分析
+
+统计员工总数、工资最高值、工资最低值、工资平均工资、工资总和：
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "size": 0,
+  "aggs": {
+      //`salary_stats` 表示先将结果存入这里，后面通过get获取数据，名字可以随意取
+    "salary_stats": {
+      "stats": {
+        "field": "salary"
+      }
+    }
+  }
+}
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void aggregationStats() throws IOException {
+
+    //设置聚合条件
+    StatsAggregationBuilder aggr = AggregationBuilders.stats("salary_stats").field("salary");
+
+    // 查询源构建器
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.aggregation(aggr);
+
+    // 设置查询结果不返回，只返回聚合结果
+    searchSourceBuilder.size(0);
+
+    // 创建查询请求对象，将查询条件配置到其中
+    SearchRequest request = new SearchRequest("user");
+    request.source(searchSourceBuilder);
+
+    // 执行请求
+    SearchResponse response = restHighLevelClient.search(request, RequestOptions.DEFAULT);
+    // 获取响应中的聚合信息
+    Aggregations aggregations = response.getAggregations();
+
+    // 输出内容
+    if (RestStatus.OK.equals(response.status()) && aggregations != null) {
+        ParsedStats aggregation = aggregations.get("salary_stats");
+        System.out.println("count：{}" + aggregation.getCount());
+        System.out.println("avg：{}" + aggregation.getAvg());
+        System.out.println("max：{}" + aggregation.getMax());
+        System.out.println("min：{}" + aggregation.getMin());
+        System.out.println("sum：{}" + aggregation.getSum());
+
+        /*ParsedPercentiles aggregation = aggregations.get("salary_percentiles");
+            for (Percentile percentile : aggregation) {
+                log.info("百分位：{}：{}", percentile.getPercent(), percentile.getValue());
+            }*/
+    }
+}
+```
+
+
+
+统计员工工资最低值：
+
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "size": 0,
+  "aggs": {
+    "salary_min": {
+      "min": {
+        "field": "salary"
+      }
+    }
+  }
+}
+```
+
+
+
+统计员工工资最高值：
+
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "size": 0,
+  "aggs": {
+    "salary_max": {
+      "max": {
+        "field": "salary"
+      }
+    }
+  }
+}
+```
+
+
+
+统计员工工资平均值：
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "size": 0,
+  "aggs": {
+    "salary_avg": {
+      "avg": {
+        "field": "salary"
+      }
+    }
+  }
+}
+```
+
+
+
+统计员工工资总值：
+
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "size": 0,
+  "aggs": {
+    "salary_sum": {
+      "sum": {
+        "field": "salary"
+      }
+    }
+  }
+}
+```
+
+
+
+统计员工总数：
+
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "size": 0,
+  "aggs": {
+    "employee_count": {
+      "value_count": {
+        "field": "salary"
+      }
+    }
+  }
+}
+```
+
+
+
+java代码示例
+
+```java
+ public void aggregation() {
+     // 设置聚合条件  salary_min名字随意取，但后面获取的时候要根据这个名字取
+     AggregationBuilder aggr = AggregationBuilders.min("salary_min").field("salary");
+     // 查询源构建器
+     SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+     searchSourceBuilder.aggregation(aggr);
+     searchSourceBuilder.size(0);
+     // 创建查询请求对象，将查询条件配置到其中
+     SearchRequest request = new SearchRequest("user");
+     request.source(searchSourceBuilder);
+     // 执行请求
+     SearchResponse response = restHighLevelClient.search(request, RequestOptions.DEFAULT);
+     // 获取响应中的聚合信息
+     Aggregations aggregations = response.getAggregations();
+     // 输出内容
+     if (RestStatus.OK.equals(response.status()) || aggregations != null) {
+         // 转换为 Min 对象
+         ParsedMin aggregation = aggregations.get("salary_min");
+
+         /*
+                // 转换为 Max 对象
+                ParsedMax aggregation = aggregations.get("salary_max");
+                // 转换为 Avg 对象
+                ParsedAvg aggregation = aggregations.get("salary_avg");
+                // 转换为 Sum 对象
+                ParsedSum aggregation = aggregations.get("salary_sum");
+                // 转换为 ValueCount 对象
+                ParsedValueCount aggregation = 
+                    aggregations.get("employee_count");
+                */
+
+         log.info("min：{}", aggregation.getValue());
+     }
+ }
+```
+
+
+
+
+
+统计员工工资百分位：
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "size": 0,
+  "aggs": {
+    "salary_percentiles": {
+      "percentiles": {
+        "field": "salary"
+      }
+    }
+  }
+}
+```
+
+
+
+java代码示例
+
+```java
+public Object aggregationPercentiles() {
+    String responseResult = "";
+    // 设置聚合条件
+    AggregationBuilder aggr = 
+        AggregationBuilders.percentiles("salary_percentiles").field("salary");
+    // 查询源构建器
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.aggregation(aggr);
+    searchSourceBuilder.size(0);
+    // 创建查询请求对象，将查询条件配置到其中
+    SearchRequest request = new SearchRequest("mydlq-user");
+    request.source(searchSourceBuilder);
+    // 执行请求
+    SearchResponse response = restHighLevelClient.search(request, RequestOptions.DEFAULT);
+    // 获取响应中的聚合信息
+    Aggregations aggregations = response.getAggregations();
+    // 输出内容
+    if (RestStatus.OK.equals(response.status()) || aggregations != null) {
+        // 转换为 Percentiles 对象
+        ParsedPercentiles aggregation = 
+            aggregations.get("salary_percentiles");
+        for (Percentile percentile : aggregation) {
+            log.info("百分位：{}：{}", percentile.getPercent(), percentile.getValue());
+        }
+    }
+    // 根据具体业务逻辑返回不同结果，这里为了方便直接将返回响应对象Json串
+    responseResult = response.toString();
+    return responseResult;
+}
+```
+
+
+
+
+
+### Bucket 聚合分析
+
+Bucket 聚合分析，类似于`group by`分组
+
+
+
+按岁数进行聚合分桶，统计各个岁数员工的人数：
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "size": 0,
+  "aggs": {
+    "age_bucket": {
+      "terms": {
+        "field": "age",
+        "size": "10"
+      }
+    }
+  }
+}
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void aggrBucketTerms() throws IOException {
+
+    AggregationBuilder aggr = AggregationBuilders.terms("age_bucket").field("age");
+
+    // 查询源构建器
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.size(10);
+    searchSourceBuilder.aggregation(aggr);
+
+    // 创建查询请求对象，将查询条件配置到其中
+    SearchRequest request = new SearchRequest("user");
+    request.source(searchSourceBuilder);
+
+    // 执行请求
+    SearchResponse response = restHighLevelClient.search(request, RequestOptions.DEFAULT);
+    // 获取响应中的聚合信息
+    Aggregations aggregations = response.getAggregations();
+
+    // 输出内容
+    if (RestStatus.OK.equals(response.status())) {
+        // 分桶
+        Terms byCompanyAggregation = aggregations.get("age_bucket");
+
+        List<? extends Terms.Bucket> buckets = byCompanyAggregation.getBuckets();
+
+        for (Terms.Bucket bucket : buckets) {
+            System.out.println("桶名：{" + bucket.getKeyAsString() + "} | 总数：{}" + bucket.getDocCount());
+        }
+
+    }
+
+}
+```
+
+
+
+按工资范围进行聚合分桶，统计工资在 3000-5000、5000-9000 和 9000 以上的员工信息：
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "aggs": {
+    "salary_range_bucket": {
+      "range": {
+        "field": "salary",
+        "ranges": [
+          {
+            "key": "低级员工", 
+            "to": 3000
+          },{
+            "key": "中级员工",
+            "from": 5000,
+            "to": 9000
+          },{
+            "key": "高级员工",
+            "from": 9000
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+
+
+java代码示例
+
+```java
+@Test
+public void aggrBucketRange() throws IOException {
+
+    AggregationBuilder aggr = AggregationBuilders.range("salary_range_bucket")
+        .field("salary")
+        .addUnboundedTo("低级员工", 3000)
+        .addRange("中级员工", 5000, 9000)
+        .addUnboundedFrom("高级员工", 9000);
+
+    // 查询源构建器
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.size(0);
+    searchSourceBuilder.aggregation(aggr);
+
+    // 创建查询请求对象，将查询条件配置到其中
+    SearchRequest request = new SearchRequest("user");
+    request.source(searchSourceBuilder);
+
+    // 执行请求
+    SearchResponse response = restHighLevelClient.search(request, RequestOptions.DEFAULT);
+    // 获取响应中的聚合信息
+    Aggregations aggregations = response.getAggregations();
+
+    if (RestStatus.OK.equals(response.status())) {
+        // 分桶
+        Range byCompanyAggregation = aggregations.get("salary_range_bucket");
+        List<? extends Range.Bucket> buckets = byCompanyAggregation.getBuckets();
+
+        // 输出各个桶的内容
+        for (Range.Bucket bucket : buckets) {
+            System.out.println("桶名：{" + bucket.getKeyAsString() + "} | 总数：{}" + bucket.getDocCount());
+        }
+    }
+
+    //return response.toString();
+}
+```
+
+
+
+按照时间范围进行分桶，统计 1985-1990 年和 1990-1995 年出生的员工信息：
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "size": 10,
+  "aggs": {
+    "date_range_bucket": {
+      "date_range": {
+        "field": "birthDate",
+        "format": "yyyy", 
+        "ranges": [
+          {
+            "key": "出生日期1985-1990的员工", 
+            "from": "1985",
+            "to": "1990"
+          },{
+            "key": "出生日期1990-1995的员工", 
+            "from": "1990",
+            "to": "1995"
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+
+java代码示例
+
+```java
+@Test
+public void aggrBucketDateRange() throws IOException {
+
+    AggregationBuilder aggr = AggregationBuilders.dateRange("date_range_bucket")
+        .field("birthDate")
+        .format("yyyy")
+        .addRange("1985-1990", "1985", "1990")
+        .addRange("1990-1995", "1990", "1995");
+
+    // 查询源构建器
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.size(0);
+    searchSourceBuilder.aggregation(aggr);
+
+    // 创建查询请求对象，将查询条件配置到其中
+    SearchRequest request = new SearchRequest("user");
+    request.source(searchSourceBuilder);
+
+    // 执行请求
+    SearchResponse response = restHighLevelClient.search(request, RequestOptions.DEFAULT);
+    // 获取响应中的聚合信息
+    Aggregations aggregations = response.getAggregations();
+
+    // 输出内容
+    if (RestStatus.OK.equals(response.status())) {
+        // 分桶
+        Range byCompanyAggregation = aggregations.get("date_range_bucket");
+        List<? extends Range.Bucket> buckets = byCompanyAggregation.getBuckets();
+
+        // 输出各个桶的内容
+        for (Range.Bucket bucket : buckets) {
+            System.out.println("桶名：{" + bucket.getKeyAsString() + "} | 总数：{}" + bucket.getDocCount());
+        }
+    }
+}
+```
+
+
+
+按工资多少进行聚合分桶，设置统计的最小值为 0，最大值为 12000，区段间隔为 3000：
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "size": 0,
+  "aggs": {
+    "salary_histogram": {
+      "histogram": {
+        "field": "salary",
+        "extended_bounds": {
+          "min": 0,
+          "max": 12000
+        }, 
+        "interval": 3000
+      }
+    }
+  }
+}
+```
+
+
+java代码示例
+
+```java
+@Test
+public void aggrBucketHistogram() throws IOException {
+
+    AggregationBuilder aggr = AggregationBuilders.histogram("salary_histogram")
+        .field("salary")
+        .extendedBounds(0, 15000)
+        .interval(5000);
+
+    // 查询源构建器
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.size(0);
+    searchSourceBuilder.aggregation(aggr);
+
+    // 创建查询请求对象，将查询条件配置到其中
+    SearchRequest request = new SearchRequest("user");
+    request.source(searchSourceBuilder);
+
+    // 执行请求
+    SearchResponse response = restHighLevelClient.search(request, RequestOptions.DEFAULT);
+    // 获取响应中的聚合信息
+    Aggregations aggregations = response.getAggregations();
+
+    // 输出内容
+    if (RestStatus.OK.equals(response.status())) {
+        // 分桶
+        Histogram byCompanyAggregation = aggregations.get("salary_histogram");
+        List<? extends Histogram.Bucket> buckets = byCompanyAggregation.getBuckets();
+        // 输出各个桶的内容
+        for (Histogram.Bucket bucket : buckets) {
+            System.out.println("桶名：{" + bucket.getKeyAsString() + "} | 总数：{}" + bucket.getDocCount());
+        }
+    }
+
+}
+```
+
+
+
+按出生日期进行分桶：
+
+
+```json
+GET http://127.0.0.1:9200/user/_search
+```
+
+
+java代码示例
+
+```java
+@Test
+public void aggrBucketDateHistogram() throws IOException {
+    AggregationBuilder aggr = AggregationBuilders.dateHistogram("birthday_histogram")
+        .field("birthDate")
+        .interval(1)
+        .dateHistogramInterval(DateHistogramInterval.YEAR)
+        .format("yyyy");
+
+    // 查询源构建器
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.size(0);
+    searchSourceBuilder.aggregation(aggr);
+
+    // 创建查询请求对象，将查询条件配置到其中
+    SearchRequest request = new SearchRequest("user");
+    request.source(searchSourceBuilder);
+    // 执行请求
+    SearchResponse response = restHighLevelClient.search(request, RequestOptions.DEFAULT);
+    // 获取响应中的聚合信息
+    Aggregations aggregations = response.getAggregations();
+    // 输出内容
+    if (RestStatus.OK.equals(response.status())) {
+        // 分桶
+        Histogram byCompanyAggregation = aggregations.get("birthday_histogram");
+
+        List<? extends Histogram.Bucket> buckets = byCompanyAggregation.getBuckets();
+        // 输出各个桶的内容
+        for (Histogram.Bucket bucket : buckets) {
+            System.out.println("桶名：{" + bucket.getKeyAsString() + "} | 总数：{}" + bucket.getDocCount());
+        }
+    }
+
+}
+```
+
+
+
+
+
+
+
+
+
+### Metric 与 Bucket 聚合分析
+
+
+
+按照员工岁数分桶、然后统计每个岁数员工工资最高值:
+
+
+```json
+GET http://127.0.0.1:9200/user/_search
+{
+  "size": 0,
+  "aggs": {
+    "salary_bucket": {
+      "terms": {
+        "field": "age",
+        "size": "10"
+      },
+      "aggs": {
+        "salary_max_user": {
+          "top_hits": {
+            "size": 1,
+            "sort": [
+              {
+                "salary": {
+                  "order": "desc"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+
+
+java代码示例
+
+```java
+ @Test
+public void aggregationTopHits() throws IOException {
+
+    AggregationBuilder testTop = AggregationBuilders.topHits("salary_max_user")
+        .size(1)
+        .sort("salary", SortOrder.DESC);
+
+    AggregationBuilder salaryBucket = AggregationBuilders.terms("salary_bucket")
+        .field("age")
+        .size(10);
+
+    salaryBucket.subAggregation(testTop);
+
+
+    // 查询源构建器
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.size(0);
+    searchSourceBuilder.aggregation(salaryBucket);
+
+    // 创建查询请求对象，将查询条件配置到其中
+    SearchRequest request = new SearchRequest("user");
+    request.source(searchSourceBuilder);
+
+    // 执行请求
+    SearchResponse response = restHighLevelClient.search(request, RequestOptions.DEFAULT);
+    // 获取响应中的聚合信息
+    Aggregations aggregations = response.getAggregations();
+
+    // 输出内容
+    if (RestStatus.OK.equals(response.status())) {
+        // 分桶
+        Terms byCompanyAggregation = aggregations.get("salary_bucket");
+        List<? extends Terms.Bucket> buckets = byCompanyAggregation.getBuckets();
+        // 输出各个桶的内容
+        for (Terms.Bucket bucket : buckets) {
+            System.out.println("桶名：{}"+ bucket.getKeyAsString());
+            ParsedTopHits topHits = bucket.getAggregations().get("salary_max_user");
+            for (SearchHit hit : topHits.getHits()) {
+                System.out.println(hit.getSourceAsString());
+            }
+        }
+    }
+
+}
+```
+
+
+
+
+
+
+
+### 查询结果高亮显示
+
+```java
+@Test
+public void highLightQuery() throws IOException {
+
+    // 构建查询条件
+    SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+    searchSourceBuilder.query(QueryBuilders.rangeQuery("age").gte(30));
+
+    // 设置高亮字段
+    HighlightBuilder highlightBuilder = new HighlightBuilder();
+    highlightBuilder.field("age");
+    highlightBuilder.preTags("<em>").postTags("</em>");
+
+    searchSourceBuilder.highlighter(highlightBuilder);
+
+    // 创建查询请求对象，将查询对象配置到其中
+    SearchRequest searchRequest = new SearchRequest("user");
+    searchRequest.source(searchSourceBuilder);
+
+    SearchResponse searchResponse = 
+        restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+
+    //获取高亮field
+    Map<String, HighlightField> highlightFields = 
+        searchResponse.getHits().getAt(0).getHighlightFields();
+
+    highlightFields.forEach((k,v) -> {
+        System.out.println(k+ " -> " + v);
+    });
+
+
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

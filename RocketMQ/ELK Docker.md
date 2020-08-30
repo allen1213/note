@@ -1,0 +1,92 @@
+
+
+使用Docker搭建ELK环境，`ElasticSearch ` 分布式搜索引擎，`Logstash `同步数据库数据到ES，`Kibana `可视化工具
+
+
+
+##### 拉取ES镜像
+
+```shell
+docker pull docker.elastic.co/elasticsearch/elasticsearch:7.7.1
+```
+
+
+
+##### 启动ES容器
+
+或者直接run，若没有镜像会在下载之后启动，启动ES需要占用很大的内存，`-e ES_JAVA_OPT="-Xms64m -Xmx512m"` 可以限制ES占的CPU
+
+```shell
+docker run -p 9200:9200 -p 9300:9300 \
+-e "discovery.type=single-node" \
+-e ES_JAVA_OPTS="-Xms64m -Xmx512m" \
+--privileged=true \
+--name es -d elasticsearch:7.7.1
+```
+
+
+
+
+
+##### 拉取Logstash镜像
+
+```shell
+
+```
+
+
+
+
+
+##### 启动Logstash
+
+```shell
+
+```
+
+
+
+
+
+##### 拉取Kibana镜像
+
+```shell
+
+```
+
+
+
+##### 启动Kibana
+
+```shell
+mkdir -p /docker/kibana/config
+```
+
+
+
+```shell
+docker run -it -d -e ELASTICSEARCH_URL=http://127.0.0.1:9200 --name kibana --network=container:elasticsearch kibana:6.7.2
+
+```
+
+docker run --name kibana -e ELASTICSEARCH_URL=http://192.168.49.132:9200 -p 5601:5601 -d kibana:7.8.1
+
+
+
+```shell
+docker run -d --restart=always \
+--log-driver json-file \
+--log-opt max-size=100m \
+--log-opt max-file=2 \
+--name kibana \
+-p 5601:5601 \
+-v /data/elk/kibana.yml:/usr/share/kibana/config/kibana.yml kibana:7.4.1
+
+```
+
+访问 `http://127.0.0.1:5601` 是否成功启动
+
+
+
+
+
