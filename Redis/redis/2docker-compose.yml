@@ -1,185 +1,10 @@
-
-
-当主节点宕机之后，Slave 并不会自动成为 Master，哨兵模式就是不时地监控redis是否按照预期良好地运行，保证主节点是存在的，若Msater宕机，哨兵会自动将该主机下的某一个从机设置为新的主机，并让其他从机和新主机建立主从关系
-
-
-
-
-
-### 搭建步骤
-
-在配置文件目录下新建 sentinel.conf 文件，名字绝不能错
-
-```shell
-touch sentinel.conf
-```
-
-
-
-分别配置被监控的名字，ip地址，端口号，以及得票数，下面的得票数为1表示表示主机挂掉后salve投票看让谁接替成为主机，得票数大于1便成为主机
-
-```shell
-# sentinel monitor 被监控机器的名字(自己起名字) ip地址 端口号 得票数 
-sentinel monitor sentinel_6380 127.0.0.1 6380 1 
-```
-
-
-
-启动哨兵
-
-```shell
-redis-sentinel /etc/redis/sentinel.conf
-```
-
-
-
-将Master停掉之后，发现哨兵后台会打印选举Master的日志，使用 `info replication` 查看各个节点的角色信息，当挂掉的主节点重启之后，就不在是Master了，他会变成新的主节点的Slave节点
-
-
-
-哨兵模式也存在单点故障问题，如果哨兵机器挂了，那么就无法进行监控了，解决办法是哨兵也建立集群，Redis哨兵模式是支持集群的
-
-
-
-
-
-
-
-### 哨兵模式集群
-
-
-
-
-
-
-
-
-
-
-
-
-
-### 三主三从三哨兵
-
-
-
-```shell
-docker network create --subnet=192.168.200.0/24 redis-cluster-net 
-```
-
-
-
-
-
-```shell
-mkdir -p /docker/redis/node-1001/conf \
-mkdir -p /docker/redis/node-1001/data \
-mkdir -p /docker/redis/node-1002/conf \
-mkdir -p /docker/redis/node-1002/data \
-mkdir -p /docker/redis/node-2001/conf \
-mkdir -p /docker/redis/node-2001/data \
-mkdir -p /docker/redis/node-2002/conf \
-mkdir -p /docker/redis/node-2002/data \
-mkdir -p /docker/redis/node-3001/conf \
-mkdir -p /docker/redis/node-3001/data \
-mkdir -p /docker/redis/node-3002/conf \
-mkdir -p /docker/redis/node-3002/data \
-mkdir -p /docker/redis/node-4001/conf \
-mkdir -p /docker/redis/node-4001/data \
-mkdir -p /docker/redis/node-4002/conf \
-mkdir -p /docker/redis/node-4002/data \
-mkdir -p /docker/redis/node-4003/conf \
-mkdir -p /docker/redis/node-4003/data
-```
-
-
-
-
-
-编写配置文件
-
-Master
-
-```
-bind 10.10.10.1
-
-protected-mode yes
-
-port 6379
-
-always-show-logo no
-
-requirepass "redis"
-
-rename-command KEYS ""
-
-dir "/data"
-
-masterauth "redis"
-```
-
-
-
-Slave
-
-```
-bind 10.10.10.2
-
-protected-mode yes
-
-port 6379
-
-always-show-logo no
-
-requirepass "redis"
-
-rename-command KEYS ""
-
-replicaof 10.10.10.1 6379
-
-masterauth "redis"
-dir "/data"
-```
-
-
-
-sentinel
-
-```
-bind 10.10.10.5
-protected-mode yes
-port 26379
-sentinel deny-scripts-reconfig yes
-sentinel monitor mymaster 10.10.10.1 6379 2
-sentinel down-after-milliseconds mymaster 5000
-sentinel auth-pass mymaster redis
-dir "/data"
-
-
-sentinel monitor mymaster 127.0.0.1 6379 2
-sentinel down-after-milliseconds mymaster 60000
-sentinel failover-timeout mymaster 180000
-sentinel parallel-syncs mymaster 1
-
-sentinel monitor resque 192.168.1.3 6380 4
-sentinel down-after-milliseconds resque 10000
-sentinel failover-timeout resque 180000
-sentinel parallel-syncs resque 5
-```
-
-
-
-
-
-使用 docker-compose 搭建三主三从三哨兵，编辑 docker-compose.yml
-
-```yml
 version: '3'
 
 services:
   redis-1001:
     image: redis
     container_name: redis-1001
+    privileged: true
     ports:
       - 1001:6379
       - 11001:16379
@@ -199,6 +24,7 @@ services:
   redis-2001:
     image: redis
     container_name: redis-2001
+    privileged: true
     ports:
       - 2001:6379
       - 12001:16379
@@ -218,6 +44,7 @@ services:
   redis-3001:
     image: redis
     container_name: redis-3001
+    privileged: true
     ports:
       - 3001:6379
       - 13001:16379
@@ -237,6 +64,7 @@ services:
   redis-1002:
     image: redis
     container_name: redis-1002
+    privileged: true
     ports:
       - 1002:6379
       - 11002:16379
@@ -257,6 +85,7 @@ services:
   redis-2002:
     image: redis
     container_name: redis-2002
+    privileged: true
     ports:
       - 2002:6379
       - 12002:16379
@@ -277,6 +106,7 @@ services:
   redis-3002:
     image: redis
     container_name: redis-3002
+    privileged: true
     ports:
       - 3002:6379
       - 13002:16379
@@ -298,11 +128,14 @@ services:
   sentinel-4001:
     image: redis
     container_name: sentinel-4001
+    privileged: true
     ports:
       - 4001:26379
     restart: always
     depends_on:
-      - redis-server-master
+      - redis-1001
+      - redis-2001
+      - redis-3001
     environment:
       TZ: "Asia/Shanghai"
     volumes:
@@ -319,11 +152,14 @@ services:
   sentinel-4002:
     image: redis
     container_name: sentinel-4002
+    privileged: true
     ports:
       - 4002:26379
     restart: always
     depends_on:
-      - redis-server-master
+      - redis-1001
+      - redis-2001
+      - redis-3001
     environment:
       TZ: "Asia/Shanghai"
     volumes:
@@ -340,11 +176,14 @@ services:
   sentinel-4003:
     image: redis
     container_name: sentinel-4003
+    privileged: true
     ports:
       - 4003:26379
     restart: always
     depends_on:
-      - redis-server-master
+      - redis-1001
+      - redis-2001
+      - redis-3001
     environment:
       TZ: "Asia/Shanghai"
     volumes:
@@ -363,31 +202,3 @@ networks:
       ipam:
         config:
           - subnet: 10.10.10.0/16
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
