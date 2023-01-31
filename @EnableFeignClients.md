@@ -115,19 +115,38 @@ public interface ImportBeanDefinitionRegistrar {
 
 
 
+```shell
+docker run -p 8080:8080 \
+-e PARAMS="--spring.datasource.url=jdbc:mysql://127.0.0.1:3306/xxl_job?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai" \ -v /tmp:/data/applogs --name xxl-job-admin \
+-d xuxueli/xxl-job-admin:2.3.1
+
+
+docker run -p 10001:8080 -e JAVA_OPTS="-Xms512m -Xmx512m" -e PARAMS="--spring.datasource.url=jdbc:mysql://10.251.104.180:3306/xxl_job?Unicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai --spring.datasource.username=root --spring.datasource.password=Family@ssw0rd"  -v /data/db/volumes/xxl-job/log:/data/applogs --name xxl-job-admin -d xuxueli/xxl-job-admin:2.3.0
+
+```
 
 
 
 
 
+```
+docker run -p 9000:9000 --name minio \
+  -e "MINIO_ACCESS_KEY=allen" \
+  -e "MINIO_SECRET_KEY=allen" \
+  -v /docker/minio/data:/data \
+  -v /docker/minio/config:/root/.minio \
+  -d minio/minio server /data
+```
 
 
 
 
 
+https://twitter.com/i/status/1603669266284179458
+
+https://twitter.com/i/status/1602506528103096320
 
 
 
-
-
+https://twitter.com/i/status/1602506528103096320
 

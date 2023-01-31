@@ -24,3 +24,38 @@ select * from dept start with pid='1001' connect by prior pid=id;
 
 ```
 
+
+
+
+
+
+
+查询表结构
+
+```sql
+-- mysql 
+ show tables;
+select COLUMN_NAME, DATA_TYPE, COLUMN_COMMENT from information_schema.columns where TABLE_SCHEMA = 'data_asset'
+ and TABLE_NAME = 'service_base_info'
+ 
+ 
+-- oracle
+# SELECT TABLE_NAME FROM user_tab_comments WHERE TABLE_TYPE = 'TABLE'
+SELECT TABLE_NAME FROM USER_TABLES WHERE TABLESPACE_NAME = 'MASTER'
+SELECT T1.COLUMN_NAME, T1.DATA_TYPE, T2.COMMENTS
+FROM USER_TAB_COLS T1, USER_COL_COMMENTS T2
+WHERE T1.TABLE_NAME = T2.TABLE_NAME AND T1.COLUMN_NAME = T2.COLUMN_NAME
+	AND T1.TABLE_NAME = upper('RSR_TMP');
+
+
+-- hive
+show tables;
+desc default.cvs_store_order_mas;
+
+
+-- doris
+ show tables;
+select COLUMN_NAME, DATA_TYPE, COLUMN_COMMENT from information_schema.columns where TABLE_SCHEMA = 'saas_belr'
+ and TABLE_NAME = 'ads_fmmd_sale_hh';
+```
+
