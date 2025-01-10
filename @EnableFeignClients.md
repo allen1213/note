@@ -140,13 +140,3 @@ docker run -p 9000:9000 --name minio \
 
 
 
-
-
-https://twitter.com/i/status/1603669266284179458
-
-https://twitter.com/i/status/1602506528103096320
-
-
-
-https://twitter.com/i/status/1602506528103096320
-
